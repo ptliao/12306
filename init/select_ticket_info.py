@@ -11,10 +11,8 @@ import wrapcache
 
 from agency.cdn_utils import CDNProxy
 from config import urlConf, configCommon
-from config.AutoSynchroTime import autoSynchroTime
 from config.TicketEnmu import ticket
-from config.configCommon import seat_conf
-from config.configCommon import seat_conf_2
+from config.configCommon import seat_conf, checkDate, seat_conf_2
 from config.ticketConf import _get_yaml
 from init.login import GoLogin
 from inter.AutoSubmitOrderRequest import autoSubmitOrderRequest
@@ -55,7 +53,7 @@ class select:
         self.urls = urlConf.urls
         self.login = GoLogin(self, self.is_auto_code, self.auto_code_type)
         self.cdn_list = []
-        self.queryUrl = "leftTicket/queryZ"
+        self.queryUrl = "leftTicket/query"
         self.passengerTicketStrList = ""
         self.oldPassengerStr = ""
         self.set_type = ""
@@ -68,7 +66,8 @@ class select:
         ticket_info_config = _get_yaml()
         from_station = ticket_info_config["set"]["from_station"]
         to_station = ticket_info_config["set"]["to_station"]
-        station_dates = ticket_info_config["set"]["station_dates"]
+        station_dates = checkDate(ticket_info_config["set"]["station_dates"])
+
         set_names = ticket_info_config["set"]["set_type"]
         try:
             set_type = [seat_conf[x.encode("utf-8")] for x in ticket_info_config["set"]["set_type"]]
@@ -100,7 +99,7 @@ class select:
               u" 2群：649992274(已满)\n"
               u" 3群：632501142(已满)\n"
               u" 4群: 606340519(已满)\n"
-              u" 5群: 948526733(未满)\n"
+              u" 5群: 948526733(已满)\n"
               u" 6群: 444101020(未满)\n"
               u" 7群: 660689659(未满)\n"
               )
@@ -137,8 +136,12 @@ class select:
         :return:
         """
         path = os.path.join(os.path.dirname(__file__), '../station_name.txt')
-        result = open(path)
-        info = result.read().split('=')[1].strip("'").split('@')
+        try:
+            with open(path, encoding="utf-8") as result:
+                info = result.read().split('=')[1].strip("'").split('@')
+        except Exception:
+            with open(path) as result:
+                info = result.read().split('=')[1].strip("'").split('@')
         del info[0]
         station_name = {}
         for i in range(0, len(info)):
@@ -160,6 +163,7 @@ class select:
         if auth:
             return self.login.auth()
         else:
+            configCommon.checkSleepTime(self)  # 防止网上启动晚上到点休眠
             self.login.go_login()
 
     def cdn_req(self, cdn):
@@ -208,7 +212,8 @@ class select:
         from_station, to_station = self.station_table(self.from_station, self.to_station)
         num = 0
         s = getPassengerDTOs(session=self, ticket_peoples=self.ticke_peoples)
-        s.sendGetPassengerDTOs()
+        passenger = s.sendGetPassengerDTOs()
+        wrapcache.set("user_info", passenger, timeout=9999999)
         while 1:
             try:
                 num += 1
@@ -326,5 +331,4 @@ class select:
 
 if __name__ == '__main__':
     s = select()
-    cdn = CDNProxy().open_cdn_file()
-    s.cdn_req(cdn)
+    cdn = s.station_table("长沙", "深圳")
